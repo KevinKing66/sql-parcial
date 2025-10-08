@@ -1,0 +1,98 @@
+
+-------E1
+DELIMITER //
+DROP PROCEDURE IF EXISTS sp_reservar_clase;
+CREATE PROCEDURE sp_reservar_clase(IN cliente INT, IN clase INT)
+BEGIN
+
+    DECLARE p_cupos_restantes INT;
+    DECLARE total_reservas_hechas INT;
+
+    INSERT INTO Reservas  (id_cliente, id_clase, estado) VALUES
+    (cliente, clase, 'RESERVADA');
+
+
+    SELECT COUNT(*) INTO total_reservas_hechas
+    FROM Reservas as r
+    WHERE r.estado in  ('RESERVADA') AND r.id_clase = clase;
+
+    SELECT total_reservas_hechas - (
+        SELECT cupo FROM Clases as c WHERE c.id_clase = clase
+    ) AS p_cupos_restantes 
+    INTO p_cupos_restantes;
+END //
+DELIMITER ;
+
+CALL sp_reservar_clase(3, 1);
+-------E2
+DELIMITER //
+DROP PROCEDURE IF EXISTS sp_cancelar_reserva;
+CREATE PROCEDURE sp_cancelar_reserva()
+BEGIN
+    SELECT * FROM vw_clases_con_aforo;
+
+    IF EXISTS (
+        SELECT 1 FROM Reservas AS r WHERE r.estado = "RESERVADA" LIMIT 1
+        ) 
+    THEN
+        UPDATE Reservas
+        SET estado = 'CANCELADA'
+        WHERE estado = 'RESERVADA';
+    END IF;
+    
+    SELECT * FROM vw_clases_con_aforo;
+
+END //
+DELIMITER ;
+
+CALL sp_cancelar_reserva();
+
+-------E3
+DELIMITER //
+DROP PROCEDURE IF EXISTS sp_porcentaje_asistencia_instructor;
+CREATE PROCEDURE sp_porcentaje_asistencia_instructor(IN instructor INT, OUT porcentaje DECIMAL(5,2))
+BEGIN
+    DECLARE total_reservas INT DEFAULT 0;
+    DECLARE total_asistencias INT DEFAULT 0;
+
+    SELECT COUNT(*) INTO total_reservas 
+    FROM Reservas AS r
+    JOIN Clases AS c ON r.id_clase = c.id_clase
+    WHERE c.id_instructor = instructor;
+
+    SELECT COUNT(*) INTO total_asistencias
+    FROM Reservas AS r
+    JOIN Clases AS c ON r.id_clase = c.id_clase
+    WHERE c.id_instructor = instructor AND r.estado = 'ASISTIDA';
+
+    IF total_reservas = 0 THEN 
+        SET porcentaje = 0;
+    ELSE 
+        SET porcentaje = (total_asistencias / total_reservas) * 100;
+    END IF;
+END //
+DELIMITER ;
+
+CALL sp_porcentaje_asistencia_instructor(1, @porcentaje_asistencia);
+
+SELECT @porcentaje_asistencia;
+
+
+------E4
+CREATE VIEW vw_clases_con_aforo AS
+SELECT 
+    c.id_clase,
+    c.nombre AS nombre_clase,
+    s.nombre AS nombre_sede,
+    c.fecha_hora,
+    c.cupo,
+    COUNT(r.id_reserva) AS reservas,
+    (c.cupo - COUNT(r.id_reserva)) AS cupos_disponibles
+FROM Clases as c
+JOIN Sedes as s ON c.id_sede = s.id_sede
+LEFT JOIN Reservas r ON c.id_clase = r.id_clase AND r.estado = 'RESERVADA'
+GROUP BY c.id_clase
+ORDER BY cupos_disponibles ASC;
+
+
+SELECT * FROM vw_clases_con_aforo;
